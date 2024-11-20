@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { kafka } = require("./client");
 const { pool, initDatabase } = require("./db");
+const path = require("path");
 const WebSocketServer = require("./webSocket");
 const initConsumer = require("./kafka-consumer");
 
@@ -10,8 +11,14 @@ const server = http.createServer(app);
 const webSocketServer = new WebSocketServer(server);
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-// Create Poll Endpoint
+// Root endpoint now serves index.html
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Basic endpoint to test server
 app.get("/", async (req, res) => {
   res.send("Hello, this is the polling App");
 });
@@ -63,9 +70,9 @@ app.post("/polls/:pollId/vote", async (req, res) => {
   }
 
   const producer = kafka.producer();
-  await producer.connect();
-
   try {
+    await producer.connect();
+
     await producer.send({
       topic: "poll-votes",
       messages: [
@@ -84,12 +91,41 @@ app.post("/polls/:pollId/vote", async (req, res) => {
   }
 });
 
+// Get Poll Options - GET /polls/:pollId/options
+app.get("/polls/:pollId/options", async (req, res) => {
+  const { pollId } = req.params;
+
+  if (!pollId) {
+    return res.status(400).json({ error: "Poll ID is required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Fetch poll options for the given pollId
+    const result = await client.query(
+      "SELECT id, option_text, vote_count FROM poll_options WHERE poll_id = $1",
+      [pollId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Poll options not found" });
+    }
+
+    res.status(200).json({ options: result.rows });
+  } catch (error) {
+    console.error("Error fetching poll options:", error);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
 // Leaderboard Endpoint - GET /leaderboard
 app.get("/leaderboard", async (req, res) => {
   const client = await pool.connect();
   try {
     const leaderboard = await client.query(`
-      SELECT p.title, po.option_text, po.vote_count 
+      SELECT p.title, po.option_text, po.vote_count
       FROM poll_options po
       JOIN polls p ON po.poll_id = p.id
       ORDER BY po.vote_count DESC
@@ -107,7 +143,7 @@ app.get("/leaderboard", async (req, res) => {
 // Start Server
 async function startServer() {
   try {
-    // Initialize database and Kafka consumer
+    // Initialize the database and Kafka consumer
     await initDatabase();
     await initConsumer(webSocketServer);
 
@@ -120,12 +156,26 @@ async function startServer() {
     process.exit(1); // Exit with a failure code if something goes wrong
   }
 
-  // Handle graceful shutdown
+  // Graceful shutdown for server, WebSocket, and Kafka consumer
   process.on("SIGINT", async () => {
-    console.log("Shutting down...");
-    await server.close();
-    await webSocketServer.close(); // Ensure WebSocket server is closed gracefully
-    process.exit(0);
+    console.log("Shutting down gracefully...");
+
+    try {
+      // Close the HTTP server
+      await server.close();
+
+      // Close the WebSocket server gracefully
+      await webSocketServer.close();
+
+      // Ensure Kafka consumer is disconnected
+      await kafka.consumer({ groupId: "polling-group" }).disconnect();
+
+      console.log("Server and Kafka consumer shut down.");
+      process.exit(0); // Exit successfully
+    } catch (shutdownError) {
+      console.error("Error during graceful shutdown:", shutdownError);
+      process.exit(1);
+    }
   });
 }
 

@@ -5,7 +5,7 @@ class WebSocketServerClass {
   constructor(httpServer) {
     this.wss = new WebSocketServer({
       httpServer: httpServer,
-      autoAcceptConnections: false, // Don't accept automatically, let's handle the requests
+      autoAcceptConnections: false, // Don't accept automatically, we'll handle requests manually
     });
     this.clients = new Set();
 
@@ -16,7 +16,7 @@ class WebSocketServerClass {
 
       connection.on("message", (message) => {
         console.log("Received message:", message);
-        // You can handle any incoming messages here if needed
+        // Handle any incoming messages if needed
       });
 
       connection.on("close", () => {
@@ -30,12 +30,12 @@ class WebSocketServerClass {
     });
   }
 
-  // Function to broadcast poll update to all connected clients
+  // Function to broadcast poll updates to all connected clients
   broadcastPollUpdate(pollId, results) {
     this.clients.forEach((client) => {
       client.sendUTF(
         JSON.stringify({
-          type: "poll_update",
+          type: "poll-update", // Make sure this matches the frontend logic
           pollId,
           results,
         })
@@ -43,12 +43,12 @@ class WebSocketServerClass {
     });
   }
 
-  // Function to broadcast leaderboard update to all connected clients
+  // Function to broadcast leaderboard updates to all connected clients
   broadcastLeaderboardUpdate(leaderboard) {
     this.clients.forEach((client) => {
       client.sendUTF(
         JSON.stringify({
-          type: "leaderboard_update",
+          type: "leaderboard-update", // Broadcast leaderboard updates
           leaderboard,
         })
       );

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Poll Results</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .poll-results {
+        margin-top: 20px;
+      }
+      .poll-option {
+        padding: 10px;
+        margin: 5px 0;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      .vote-form {
+        margin-top: 20px;
+        padding: 20px;
+        border: 1px solid #eee;
+        border-radius: 4px;
+      }
+      select,
+      button {
+        padding: 8px;
+        margin: 5px;
+      }
+      .leaderboard {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Poll Results</h1>
+
+    <div class="vote-form">
+      <h2>Vote for a Poll Option</h2>
+      <form id="vote-form">
+        <label for="poll-option">Choose a poll option:</label>
+        <select id="poll-option">
+          <!-- Options will be populated dynamically -->
+        </select>
+        <button type="submit">Submit Vote</button>
+      </form>
+    </div>
+
+    <h2>Current Results</h2>
+    <div id="poll-results" class="poll-results">
+      <!-- Poll results will appear here -->
+    </div>
+
+    <h2>Leaderboard</h2>
+    <div id="leaderboard" class="leaderboard">
+      <!-- Leaderboard will appear here -->
+    </div>
+
+    <script>
+      // Initialize WebSocket connection
+      const socket = new WebSocket("ws://localhost:3000");
+      const pollId = 1; // Replace with dynamic poll ID if needed
+
+      // Load poll options when page loads
+      async function loadPollOptions() {
+        try {
+          const response = await fetch("http://localhost:3000/polls/3/options");
+          const data = await response.json();
+          console.log("Poll options:", data); // Log data to check structure
+
+          if (data.options) {
+            const options = data.options; // Extract the options array
+            const selectElement = document.getElementById("poll-option");
+            selectElement.innerHTML = options
+              .map(
+                (option) =>
+                  `<option value="${option.id}">${option.option_text}</option>`
+              )
+              .join(""); // Populate the dropdown with options
+          } else {
+            console.error("No options found in the response");
+          }
+        } catch (error) {
+          console.error("Error loading poll options:", error);
+        }
+      }
+
+      // Load leaderboard
+      async function loadLeaderboard() {
+        try {
+          const response = await fetch("/leaderboard");
+          const leaderboard = await response.json();
+          updateLeaderboard(leaderboard);
+        } catch (error) {
+          console.error("Error loading leaderboard:", error);
+        }
+      }
+
+      // Update leaderboard in the UI
+      function updateLeaderboard(results) {
+        const leaderboardContainer = document.getElementById("leaderboard");
+        leaderboardContainer.innerHTML = results
+          .map(
+            (result) => `  
+          <div class="poll-option">
+            ${result.title} - ${result.option_text}: ${result.vote_count} votes
+          </div>
+        `
+          )
+          .join("");
+      }
+
+      // Listen for WebSocket messages
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "poll-update") {
+          updatePollResults(data.results); // Update poll results in the UI
+          loadLeaderboard(); // Refresh leaderboard when votes update
+        } else if (data.type === "leaderboard-update") {
+          updateLeaderboard(data.leaderboard); // Update leaderboard with new data
+        }
+      };
+
+      // Update poll results in the UI
+      function updatePollResults(results) {
+        const pollResultsContainer = document.getElementById("poll-results");
+        pollResultsContainer.innerHTML = results
+          .map(
+            (result) => `  
+          <div class="poll-option">
+            ${result.option_text}: ${result.vote_count} votes
+          </div>
+        `
+          )
+          .join(""); // Join the array to create HTML structure
+      }
+
+      // Handle vote submission
+      document
+        .getElementById("vote-form")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+
+          const selectedOption = document.getElementById("poll-option").value;
+
+          try {
+            const response = await fetch(`/polls/${pollId}/vote`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ optionId: selectedOption }),
+            });
+
+            if (!response.ok) {
+              throw new Error("Vote failed");
+            }
+
+            console.log("Vote registered successfully");
+
+            // After voting, fetch the leaderboard to update the UI
+            loadLeaderboard();
+          } catch (error) {
+            console.error("Error registering vote:", error);
+          }
+        });
+
+      // Initial loads
+      loadPollOptions();
+      loadLeaderboard();
+    </script>
+  </body>
+</html>

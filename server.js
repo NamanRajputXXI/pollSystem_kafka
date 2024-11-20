@@ -11,10 +11,12 @@ const webSocketServer = new WebSocketServer(server);
 
 app.use(express.json());
 
-// Create Poll
+// Create Poll Endpoint
 app.get("/", async (req, res) => {
-  res.send("hello this is the polling App");
+  res.send("Hello, this is the polling App");
 });
+
+// Create Poll - POST /polls
 app.post("/polls", async (req, res) => {
   const { title, options } = req.body;
 
@@ -24,12 +26,14 @@ app.post("/polls", async (req, res) => {
 
   const client = await pool.connect();
   try {
+    // Insert poll into the polls table
     const pollResult = await client.query(
       "INSERT INTO polls (title) VALUES ($1) RETURNING id",
       [title]
     );
     const pollId = pollResult.rows[0].id;
 
+    // Insert poll options
     const optionsQueries = options.map((option) =>
       client.query(
         "INSERT INTO poll_options (poll_id, option_text) VALUES ($1, $2)",
@@ -47,7 +51,7 @@ app.post("/polls", async (req, res) => {
   }
 });
 
-// Vote on Poll
+// Vote on Poll - POST /polls/:pollId/vote
 app.post("/polls/:pollId/vote", async (req, res) => {
   const { optionId } = req.body;
   const { pollId } = req.params;
@@ -80,7 +84,7 @@ app.post("/polls/:pollId/vote", async (req, res) => {
   }
 });
 
-// Leaderboard
+// Leaderboard Endpoint - GET /leaderboard
 app.get("/leaderboard", async (req, res) => {
   const client = await pool.connect();
   try {
@@ -100,20 +104,30 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
+// Start Server
 async function startServer() {
-  await initDatabase();
-  await initConsumer(webSocketServer);
+  try {
+    // Initialize database and Kafka consumer
+    await initDatabase();
+    await initConsumer(webSocketServer);
 
-  const PORT = process.env.PORT || 3000;
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Error during server startup:", error);
+    process.exit(1); // Exit with a failure code if something goes wrong
+  }
 
+  // Handle graceful shutdown
   process.on("SIGINT", async () => {
     console.log("Shutting down...");
-    server.close();
+    await server.close();
+    await webSocketServer.close(); // Ensure WebSocket server is closed gracefully
     process.exit(0);
   });
 }
 
+// Execute the server startup
 startServer();

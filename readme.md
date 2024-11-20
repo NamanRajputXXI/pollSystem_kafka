@@ -10,3 +10,9 @@ run these command before starting the server
    More? confluentinc/cp-kafka
 
 after that 3. In project terminal run -> node server.js
+
+firstly you have to make your poll options first from post man
+then run the localhost:3000 on your browser
+after that you see vote option and button so that you can vote
+
+and below that there is a leaderboard which will update without refresh
